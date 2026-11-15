@@ -1,6 +1,6 @@
 # KeyVault – slaptažodžių tvarkyklės Chrome plėtinys (MVP)
 
-Chrome plėtinys (Manifest V3), sukurtas su **Vite + React**.
+Chrome plėtinys (Manifest V3), sukurtas su **Vite + React**, ir **FastAPI** backendas.
 
 ## Kas veikia
 
@@ -16,7 +16,7 @@ Slaptažodžių generatorius šiame etape praleistas (navigacijoje pažymėtas �
 
 ## Paleidimas
 
-Reikia **Node.js 20+** ir **Google Chrome** (arba kitos Chromium naršyklės).
+Reikia **Node.js 20+**, **Python 3.11+** ir **Google Chrome** (arba kitos Chromium naršyklės).
 
 ```bash
 git clone <repozitorijos-adresas> keyvault-extension
@@ -24,6 +24,18 @@ cd keyvault-extension
 npm install
 npm run build
 ```
+
+Backend paleidimas atskirame terminale:
+
+```powershell
+cd backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload
+```
+
+Backend veikia adresu `http://127.0.0.1:8000`, o jo Swagger dokumentacija – `http://127.0.0.1:8000/docs`.
+Prieš registruojantis ar atrakinant plėtinį backend turi būti paleistas.
 
 Tada įkelkite plėtinį į Chrome:
 
@@ -66,27 +78,32 @@ src/
     styles.css           tamsi tema pagal maketus
   background/
     index.js             service worker – žinučių maršrutizatorius („API“)
-    vault-service.js     MOCK BACKEND: vartotojai, šifravimas, CRUD, formų aptikimo logika
+    vault-service.js     FastAPI klientas, šifravimas, CRUD ir formų aptikimo logika
     demo-data.js         demonstraciniai įrašai
   content/
     index.js             formų aptikimas ir automatinis užpildymas puslapyje
     ui.js                in-page kortelės (Shadow DOM)
-  lib/                   bendras kodas: crypto, chrome.storage wrapper, URL, stiprumas
+  lib/                   API klientas, crypto, chrome.storage wrapper, URL, stiprumas
+backend/
+  main.py                FastAPI autentifikacija ir šifruotos saugyklos API
+  requirements.txt       Python priklausomybės
 demo/                    lokali testinė prisijungimo svetainė (npm run demo)
 vite.config.js           popup + background build'as
 vite.content.config.js   content script'o build'as (IIFE)
 ```
 
-### Kaip veikia „mock backend“
+### Kaip veikia backend integracija
 
 UI niekada tiesiogiai neliečia saugyklos. Visi veiksmai siunčiami žinutėmis į background service worker'į
-(`src/lib/messages.js` → `src/background/index.js`), kuris kviečia `vault-service.js`.
-Norint prijungti tikrą serverį, užtenka `vault-service.js` funkcijas pakeisti `fetch` kvietimais. UI keisti nereikės.
+(`src/lib/messages.js` → `src/background/index.js`), kuris kviečia `vault-service.js`. Šis per `src/lib/api.js`
+bendrauja su FastAPI serveriu. Pagrindinis slaptažodis ir AES raktas serveriui nesiunčiami: plėtinys išveda
+atskirą autentifikacijos paslaptį, o serveris saugo tik Argon2 maišą bei AES-GCM užšifruotą vault blobą.
 
 | Raktas | Kur | Turinys |
 | --- | --- | --- |
-| `kv:users` | `chrome.storage.local` | vartotojai: druska ir šifruotas tikrinimo blokas |
-| `kv:vault:<email>` | `chrome.storage.local` | AES-GCM šifruotas įrašų masyvas |
 | `kv:settings` | `chrome.storage.local` | nustatymai |
-| `kv:session` | `chrome.storage.session` | atrakinimo raktas (tik atmintyje, dingsta uždarius naršyklę) |
+| `kv:session` | `chrome.storage.session` | AES raktas, JWT ir vault versija; dingsta uždarius naršyklę |
 | `kv:pending`, `kv:draft` | `chrome.storage.session` | aptikti, dar neišsaugoti prisijungimai |
+
+Serverio SQLite duomenų bazėje laikomi vartotojo el. paštas, kriptografinė druska, autentifikacijos maiša,
+užšifruotas vault tekstas, AES-GCM IV ir optimistinio sinchronizavimo versija.

@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  MOCK BACKEND
-//  Visa "serverio" logika gyvena čia ir saugo duomenis chrome.storage.
-//  Vėliau šį failą galima pakeisti tikrais API kvietimais (fetch) nekeičiant UI.
+//  BACKEND KLIENTAS
+//  UI kontraktas lieka vietinis, o paskyra ir šifruota saugykla sinchronizuojamos
+//  su FastAPI serveriu. AES raktas lieka tik chrome.storage.session.
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   PBKDF2_ITERATIONS,
   decryptJSON,
+  deriveAuthSecret,
   deriveKeyBytes,
   encryptJSON,
   fromBase64,
@@ -13,6 +14,15 @@ import {
   randomBytes,
   toBase64,
 } from '../lib/crypto.js';
+import {
+  ApiHttpError,
+  deleteRemoteAccount,
+  downloadVault,
+  getAuthParameters,
+  loginAccount,
+  registerAccount,
+  uploadVault,
+} from '../lib/api.js';
 import {
   DEFAULT_SETTINGS,
   KEYS,
@@ -25,7 +35,6 @@ import {
 import { hostOf, titleFromUrl, urlMatches } from '../lib/url.js';
 import { DEMO_ENTRIES } from './demo-data.js';
 
-const VERIFIER = 'keyvault-ok';
 const PENDING_TTL_MS = 3 * 60 * 1000;
 
 export class ApiError extends Error {}
@@ -49,21 +58,64 @@ async function getSession() {
   return sessionGet(KEYS.session);
 }
 
-async function requireKey() {
+async function requireSession() {
   const s = await getSession();
-  if (!s) throw new ApiError('LOCKED');
-  return { email: s.email, key: await importAesKey(fromBase64(s.key)) };
+  if (!s?.token || !s?.key) throw new ApiError('LOCKED');
+  return { ...s, keyObject: await importAesKey(fromBase64(s.key)) };
+}
+
+async function updateSession(patch) {
+  const current = await getSession();
+  if (!current) throw new ApiError('LOCKED');
+  const next = { ...current, ...patch };
+  await sessionSet(KEYS.session, next);
+  return next;
 }
 
 async function readEntries() {
-  const { email, key } = await requireKey();
-  const blob = await localGet(KEYS.vault(email));
-  return blob ? decryptJSON(key, blob) : [];
+  const session = await requireSession();
+  let remote;
+  try {
+    remote = await downloadVault(session.token);
+  } catch (error) {
+    if (error instanceof ApiHttpError && error.status === 401) {
+      await sessionRemove(KEYS.session);
+      throw new ApiError('Sesija baigėsi. Prisijunkite iš naujo');
+    }
+    throw new ApiError(error.message);
+  }
+
+  await updateSession({ vaultVersion: remote.version });
+  if (!remote.ciphertext) return [];
+
+  try {
+    return await decryptJSON(session.keyObject, { iv: remote.iv, ct: remote.ciphertext });
+  } catch {
+    throw new ApiError('Nepavyko iššifruoti saugyklos');
+  }
 }
 
 async function writeEntries(entries) {
-  const { email, key } = await requireKey();
-  await localSet(KEYS.vault(email), await encryptJSON(key, entries));
+  const session = await requireSession();
+  const encrypted = await encryptJSON(session.keyObject, entries);
+
+  try {
+    const saved = await uploadVault(session.token, {
+      ciphertext: encrypted.ct,
+      iv: encrypted.iv,
+      version: session.vaultVersion ?? 0,
+    });
+    await updateSession({ vaultVersion: saved.version });
+  } catch (error) {
+    if (error instanceof ApiHttpError && error.status === 409) {
+      throw new ApiError('Saugykla pasikeitė kitame lange. Atrakinkite ją iš naujo');
+    }
+    if (error instanceof ApiHttpError && error.status === 401) {
+      await sessionRemove(KEYS.session);
+      throw new ApiError('Sesija baigėsi. Prisijunkite iš naujo');
+    }
+    throw new ApiError(error.message);
+  }
 }
 
 // ── Autentifikacija ──────────────────────────────────────────────────────────
@@ -71,7 +123,7 @@ export async function status() {
   const s = await getSession();
   const settings = await getSettings();
   return {
-    unlocked: !!s,
+    unlocked: !!(s?.token && s?.key),
     email: s?.email ?? null,
     lastEmail: settings.rememberEmail ? settings.lastEmail : '',
     hasDraft: !!(await sessionGet(KEYS.draft)),
@@ -84,20 +136,29 @@ export async function register({ email, password, seedDemo }) {
   if (!password || password.length < 8)
     throw new ApiError('Pagrindinis slaptažodis turi būti bent 8 simbolių');
 
-  const users = await localGet(KEYS.users, {});
-  if (users[email]) throw new ApiError('Paskyra su šiuo el. paštu jau egzistuoja');
-
   const salt = randomBytes(16);
   const raw = await deriveKeyBytes(password, salt);
-  const key = await importAesKey(raw);
-  users[email] = {
-    salt: toBase64(salt),
-    iterations: PBKDF2_ITERATIONS,
-    verifier: await encryptJSON(key, VERIFIER),
-    createdAt: Date.now(),
-  };
-  await localSet(KEYS.users, users);
-  await sessionSet(KEYS.session, { email, key: toBase64(raw) });
+  const authSecret = await deriveAuthSecret(password, salt);
+  let auth;
+  try {
+    auth = await registerAccount({
+      email,
+      authSecret,
+      cryptoSalt: toBase64(salt),
+    });
+  } catch (error) {
+    if (error instanceof ApiHttpError && error.status === 409) {
+      throw new ApiError('Paskyra su šiuo el. paštu jau egzistuoja');
+    }
+    throw new ApiError(error.message);
+  }
+
+  await sessionSet(KEYS.session, {
+    email,
+    key: toBase64(raw),
+    token: auth.access_token,
+    vaultVersion: 0,
+  });
 
   const now = Date.now();
   const entries = seedDemo
@@ -110,20 +171,63 @@ export async function register({ email, password, seedDemo }) {
 
 export async function login({ email, password, rememberEmail }) {
   email = normEmail(email);
-  const users = await localGet(KEYS.users, {});
-  const user = users[email];
-  if (!user) throw new ApiError('Neteisingas el. paštas arba slaptažodis');
-
-  const raw = await deriveKeyBytes(password, fromBase64(user.salt), user.iterations);
-  const key = await importAesKey(raw);
+  let params;
   try {
-    const v = await decryptJSON(key, user.verifier);
-    if (v !== VERIFIER) throw new Error();
-  } catch {
-    throw new ApiError('Neteisingas el. paštas arba slaptažodis');
+    params = await getAuthParameters(email);
+  } catch (error) {
+    if (error instanceof ApiHttpError && error.status === 404) {
+      throw new ApiError('Neteisingas el. paštas arba slaptažodis');
+    }
+    throw new ApiError(error.message);
   }
-  await sessionSet(KEYS.session, { email, key: toBase64(raw) });
+
+  const salt = fromBase64(params.crypto_salt);
+  const raw = await deriveKeyBytes(password, salt, PBKDF2_ITERATIONS);
+  const authSecret = await deriveAuthSecret(password, salt, PBKDF2_ITERATIONS);
+  let auth;
+  try {
+    auth = await loginAccount({ email, authSecret });
+  } catch (error) {
+    if (error instanceof ApiHttpError && error.status === 401) {
+      throw new ApiError('Neteisingas el. paštas arba slaptažodis');
+    }
+    throw new ApiError(error.message);
+  }
+
+  await sessionSet(KEYS.session, {
+    email,
+    key: toBase64(raw),
+    token: auth.access_token,
+    vaultVersion: 0,
+  });
+
+  try {
+    await readEntries();
+  } catch (error) {
+    await sessionRemove(KEYS.session);
+    if (error.message === 'Nepavyko iššifruoti saugyklos') {
+      throw new ApiError('Neteisingas el. paštas arba slaptažodis');
+    }
+    throw error;
+  }
+
   await updateSettings({ rememberEmail: !!rememberEmail, lastEmail: rememberEmail ? email : '' });
+  return status();
+}
+
+export async function deleteAccount() {
+  const session = await requireSession();
+  try {
+    await deleteRemoteAccount(session.token);
+  } catch (error) {
+    if (!(error instanceof ApiHttpError && error.status === 401)) {
+      throw new ApiError(error.message);
+    }
+  } finally {
+    await sessionRemove(KEYS.session);
+  }
+  const settings = await getSettings();
+  await updateSettings({ lastEmail: settings.rememberEmail ? session.email : '' });
   return status();
 }
 

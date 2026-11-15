@@ -1,10 +1,8 @@
-// Plonas sluoksnis virš chrome.storage – tai mūsų "duomenų bazės" mock'as.
-// local   – išlieka tarp naršyklės paleidimų (vartotojai, užšifruota saugykla, nustatymai)
+// Plonas sluoksnis virš chrome.storage vietiniams nustatymams ir sesijai.
+// local   – išlieka tarp naršyklės paleidimų (tik nustatymai)
 // session – tik atmintyje, išvaloma uždarius naršyklę (atrakinimo raktas, laikini duomenys)
 
 export const KEYS = {
-  users: 'kv:users',
-  vault: (email) => `kv:vault:${email}`,
   settings: 'kv:settings',
   session: 'kv:session',
   pending: 'kv:pending',
@@ -25,10 +23,6 @@ export async function localGet(key, fallback = null) {
 
 export function localSet(key, value) {
   return chrome.storage.local.set({ [key]: value });
-}
-
-export function localRemove(key) {
-  return chrome.storage.local.remove(key);
 }
 
 export async function sessionGet(key, fallback = null) {

@@ -1,7 +1,6 @@
 // Background service worker – veikia kaip vietinis "API serveris".
 // Popup ir content script'as bendrauja su juo per chrome.runtime.sendMessage.
 import * as api from './vault-service.js';
-import { KEYS, localGet, localRemove, localSet, sessionRemove } from '../lib/db.js';
 
 async function openExtensionPopup() {
   // Chrome 127+: atidaro tikrą plėtinio popup'ą. Jei nepavyksta – atskiras langas.
@@ -23,25 +22,13 @@ async function openExtensionPopup() {
   return 'window';
 }
 
-async function resetAccount() {
-  const s = await chrome.storage.session.get(KEYS.session);
-  const email = s[KEYS.session]?.email;
-  if (!email) throw new api.ApiError('LOCKED');
-  const users = await localGet(KEYS.users, {});
-  delete users[email];
-  await localSet(KEYS.users, users);
-  await localRemove(KEYS.vault(email));
-  await sessionRemove(KEYS.session);
-  return api.status();
-}
-
 const handlers = {
   // autentifikacija
   'auth:status': () => api.status(),
   'auth:register': (p) => api.register(p),
   'auth:login': (p) => api.login(p),
   'auth:lock': () => api.lock(),
-  'auth:reset': () => resetAccount(),
+  'auth:reset': () => api.deleteAccount(),
   // saugykla
   'vault:list': () => api.listEntries(),
   'vault:get': (p) => api.getEntry(p.id),

@@ -38,6 +38,18 @@ export async function deriveKeyBytes(password, salt, iterations = PBKDF2_ITERATI
   return new Uint8Array(bits);
 }
 
+/**
+ * Išveda autentifikacijos paslaptį, atskirtą nuo AES saugyklos rakto.
+ * Serveris gauna tik šią reikšmę, o ne saugyklos šifravimo raktą.
+ */
+export async function deriveAuthSecret(password, salt, iterations = PBKDF2_ITERATIONS) {
+  const context = enc.encode('keyvault-auth-v1');
+  const authSalt = new Uint8Array(salt.length + context.length);
+  authSalt.set(salt);
+  authSalt.set(context, salt.length);
+  return toBase64(await deriveKeyBytes(password, authSalt, iterations));
+}
+
 export function importAesKey(rawBytes) {
   return crypto.subtle.importKey('raw', rawBytes, { name: 'AES-GCM' }, false, [
     'encrypt',

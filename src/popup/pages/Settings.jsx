@@ -69,7 +69,7 @@ export default function SettingsPage({ email, go, onLocked }) {
           <div className="card-row">
             <div className="grow">
               <div className="t">Ištrinti paskyrą</div>
-              <div className="d">Visi šios paskyros įrašai bus negrįžtamai pašalinti iš įrenginio</div>
+              <div className="d">Visi šios paskyros įrašai bus negrįžtamai pašalinti iš serverio</div>
             </div>
           </div>
           <div className="card-row" style={{ gap: 8 }}>
@@ -88,7 +88,7 @@ export default function SettingsPage({ email, go, onLocked }) {
 
         <p style={{ fontSize: 11.5, color: 'var(--faint)', textAlign: 'center', lineHeight: 1.6, margin: '6px 10px 70px' }}>
           KeyVault v0.1.0 · MVP<br />
-          Duomenys saugomi tik šiame įrenginyje ir šifruojami AES-256-GCM.
+          Saugykla serveryje laikoma tik AES-256-GCM šifruotu pavidalu.
         </p>
       </div>
       <BottomNav active="settings" go={go} />

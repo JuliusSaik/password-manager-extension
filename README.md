@@ -1,7 +1,6 @@
 # KeyVault – slaptažodžių tvarkyklės Chrome plėtinys (MVP)
 
-Chrome plėtinys (Manifest V3), sukurtas su **Vite + React**. Tai tik frontend dalis:
-backend'as ir duomenų bazė imituojami naršyklės `chrome.storage` saugykloje.
+Chrome plėtinys (Manifest V3), sukurtas su **Vite + React**.
 
 ## Kas veikia
 
@@ -91,5 +90,3 @@ Norint prijungti tikrą serverį, užtenka `vault-service.js` funkcijas pakeisti
 | `kv:settings` | `chrome.storage.local` | nustatymai |
 | `kv:session` | `chrome.storage.session` | atrakinimo raktas (tik atmintyje, dingsta uždarius naršyklę) |
 | `kv:pending`, `kv:draft` | `chrome.storage.session` | aptikti, dar neišsaugoti prisijungimai |
-
-> ⚠️ Tai MVP demonstracijai. Pagrindinio slaptažodžio atkurti neįmanoma, o duomenys saugomi tik šioje naršyklėje.

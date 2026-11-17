@@ -31,6 +31,26 @@ Backend paleidimas atskirame terminale:
 cd backend
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Sugeneruotą reikšmę įrašykite į `backend/.env` vietoje
+`replace-with-a-random-secret`:
+
+```env
+KEYVAULT_DATABASE_URL=sqlite:///./data/keyvault.db
+KEYVAULT_JWT_SECRET=cia-irasomas-sugeneruotas-raktas
+KEYVAULT_ACCESS_TOKEN_MINUTES=60
+```
+
+Kiekvienas programuotojas lokaliai susikuria savo `.env` ir JWT raktą. Tikrasis
+`.env` failas į Git nekeliamas. Bendroje serverio aplinkoje turi būti naudojamas
+vienas pastovus slaptas raktas, perduodamas per hostingo aplinkos kintamuosius.
+
+Backend paleidimas:
+
+```powershell
 .\.venv\Scripts\python.exe -m uvicorn main:app --reload
 ```
 

@@ -5,7 +5,7 @@
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-export const PBKDF2_ITERATIONS = 310_000;
+export const PBKDF2_ITERATIONS = 600_000;
 
 export function toBase64(bytes) {
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);

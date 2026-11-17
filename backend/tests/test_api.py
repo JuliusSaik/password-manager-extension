@@ -34,6 +34,13 @@ def test_auth_vault_and_account_lifecycle():
     token = register.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
+    auth_parameters = client.get(
+        "/auth/params",
+        params={"email": "test@example.com"},
+    )
+    assert auth_parameters.status_code == 200
+    assert auth_parameters.json()["kdf_iterations"] == 600_000
+
     empty_vault = client.get("/vault", headers=headers)
     assert empty_vault.status_code == 200
     assert empty_vault.json()["version"] == 0

@@ -182,8 +182,9 @@ export async function login({ email, password, rememberEmail }) {
   }
 
   const salt = fromBase64(params.crypto_salt);
-  const raw = await deriveKeyBytes(password, salt, PBKDF2_ITERATIONS);
-  const authSecret = await deriveAuthSecret(password, salt, PBKDF2_ITERATIONS);
+  const iterations = params.kdf_iterations ?? PBKDF2_ITERATIONS;
+  const raw = await deriveKeyBytes(password, salt, iterations);
+  const authSecret = await deriveAuthSecret(password, salt, iterations);
   let auth;
   try {
     auth = await loginAccount({ email, authSecret });

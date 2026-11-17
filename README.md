@@ -6,7 +6,7 @@ Chrome plėtinys (Manifest V3), sukurtas su **Vite + React**, ir **FastAPI** bac
 
 | Funkcija | Aprašymas |
 | --- | --- |
-| **Prisijungimas / registracija** | Paskyra su el. paštu ir pagrindiniu slaptažodžiu. Iš slaptažodžio PBKDF2 (310 000 iteracijų) būdu išvedamas AES-256-GCM raktas, juo šifruojama visa saugykla. Užrakinimo mygtukas, „Atsiminti el. paštą“. |
+| **Prisijungimas / registracija** | Paskyra su el. paštu ir pagrindiniu slaptažodžiu. Iš slaptažodžio PBKDF2-SHA256 (600 000 iteracijų naujoms paskyroms) būdu išvedamas AES-256-GCM raktas, juo šifruojama visa saugykla. Užrakinimo mygtukas, „Atsiminti el. paštą“. |
 | **Saugykla** | Visų slaptažodžių sąrašas, paieška (pavadinimas, vartotojas, svetainė), filtrai (Visi, Mėgstami, Darbas, Socialiniai, Asmeninis), sekcija „Šiai svetainei“, slaptažodžio kopijavimas, įrašų kūrimas, redagavimas ir trynimas. |
 | **Formos aptikimas** | Content script'as pastebi prisijungimo formos pateikimą ir puslapyje parodo kortelę „Išsaugoti slaptažodį?“. Paspaudus „Išsaugoti“ atsidaro plėtinys su užpildytu įrašo pridėjimo puslapiu. Jei slaptažodis pasikeitė, siūloma įrašą atnaujinti. |
 | **Automatinis užpildymas pagal URL** | Atidarius puslapį su prisijungimo forma, kuriam yra išsaugotų prisijungimų, parodoma kortelė su jais. Paspaudus „Įterpti“ užpildomi vartotojo vardo ir slaptažodžio laukai. Taip pat galima įterpti iš popup lango sekcijos „Šiai svetainei“. |
@@ -105,5 +105,5 @@ atskirą autentifikacijos paslaptį, o serveris saugo tik Argon2 maišą bei AES
 | `kv:session` | `chrome.storage.session` | AES raktas, JWT ir vault versija; dingsta uždarius naršyklę |
 | `kv:pending`, `kv:draft` | `chrome.storage.session` | aptikti, dar neišsaugoti prisijungimai |
 
-Serverio SQLite duomenų bazėje laikomi vartotojo el. paštas, kriptografinė druska, autentifikacijos maiša,
+Serverio SQLite duomenų bazėje laikomi vartotojo el. paštas, kriptografinė druska, PBKDF2 iteracijų skaičius, autentifikacijos maiša,
 užšifruotas vault tekstas, AES-GCM IV ir optimistinio sinchronizavimo versija.

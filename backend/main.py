@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 from pwdlib import PasswordHash
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session
 from sqlalchemy.orm import mapped_column, sessionmaker
 
@@ -52,6 +52,8 @@ SessionLocal = sessionmaker(
 password_hash = PasswordHash.recommended()
 bearer_scheme = HTTPBearer()
 JWT_ALGORITHM = "HS256"
+PBKDF2_ITERATIONS = 600_000
+LEGACY_PBKDF2_ITERATIONS = 310_000
 
 
 class Base(DeclarativeBase):
@@ -77,6 +79,10 @@ class User(Base):
     )
     auth_hash: Mapped[str] = mapped_column(Text)
     crypto_salt: Mapped[str] = mapped_column(String(255))
+    kdf_iterations: Mapped[int] = mapped_column(
+        Integer,
+        default=PBKDF2_ITERATIONS,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
@@ -119,6 +125,7 @@ class LoginRequest(BaseModel):
 
 class AuthParametersResponse(BaseModel):
     crypto_salt: str
+    kdf_iterations: int
 
 
 class AuthResponse(BaseModel):
@@ -207,6 +214,30 @@ def get_current_user(
 
 Base.metadata.create_all(bind=engine)
 
+
+def migrate_legacy_sqlite_database() -> None:
+    """Preserve accounts created before per-user KDF parameters were stored."""
+    if engine.dialect.name != "sqlite":
+        return
+
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("users")
+    }
+    if "kdf_iterations" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN kdf_iterations "
+                f"INTEGER NOT NULL DEFAULT {LEGACY_PBKDF2_ITERATIONS}"
+            )
+        )
+
+
+migrate_legacy_sqlite_database()
+
 app = FastAPI(
     title="KeyVault API",
     version="0.1.0",
@@ -260,7 +291,8 @@ def get_auth_parameters(
         )
 
     return AuthParametersResponse(
-        crypto_salt=user.crypto_salt
+        crypto_salt=user.crypto_salt,
+        kdf_iterations=user.kdf_iterations,
     )
 
 
@@ -289,6 +321,7 @@ def register(
         email=email,
         auth_hash=password_hash.hash(payload.auth_secret),
         crypto_salt=payload.crypto_salt,
+        kdf_iterations=PBKDF2_ITERATIONS,
     )
 
     db.add(user)
